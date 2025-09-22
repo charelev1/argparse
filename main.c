@@ -15,16 +15,31 @@ typedef struct {
     size_t capacity;
 } ArrayOfStrings;
 
+typedef struct {
+    long* items;
+    size_t count;
+    size_t capacity;
+} ArrayOfLongs;
+
+typedef struct {
+    double* items;
+    size_t count;
+    size_t capacity;
+} ArrayOfDoubles;
 
 typedef union {
-	bool           exists; // used for ARG_FLAG_BOOL
-	ArrayOfStrings array;   // used for ARG_NARGS_FLAGS 
+	bool           exists;       // used for ARG_FLAG_BOOL
+	ArrayOfStrings array_string; // used for ARG_FLAG_NARG_STRING
+	ArrayOfLongs   array_long;   // used for ARG_FLAG_NARG_LONG
+	ArrayOfDoubles array_double; // used for ARG_FLAG_NARG_DOUBLE
 } ArgData;
 
 
 typedef enum {
 	ARG_FLAG_BOOL,
-	ARG_FLAG_NARG
+	ARG_FLAG_NARG_STRING,
+	ARG_FLAG_NARG_LONG,
+	ARG_FLAG_NARG_DOUBLE
 } ArgType;
 
 
@@ -46,8 +61,10 @@ typedef struct {
 
 const char * argTypeToString(ArgType a)
 {
-	if (a == ARG_FLAG_BOOL) return "ARG_FLAG_BOOL";
-	if (a == ARG_FLAG_NARG) return "ARG_FLAG_NARG";
+	if (a == ARG_FLAG_BOOL)        return "ARG_FLAG_BOOL";
+	if (a == ARG_FLAG_NARG_STRING) return "ARG_FLAG_NARG_STRING";
+	if (a == ARG_FLAG_NARG_LONG)   return "ARG_FLAG_NARG_LONG";
+	if (a == ARG_FLAG_NARG_DOUBLE) return "ARG_FLAG_NARG_DOUBLE";
 	nob_log(ERROR, "Unknown argument type %s", a);
 	abort();
 }
@@ -122,13 +139,13 @@ bool parseFlagNargs(const ArgTokens* tokens, size_t* current_count, Args* args_p
 	// ARG_TOKEN_FLAG +2 ARG_TOKEN_DATA
 
 	Arg arg = {0};	
-	arg.type = ARG_FLAG_NARG;
+	arg.type = ARG_FLAG_NARG_STRING;
 	arg.flag = tokens->items[i++].data;
 	ArrayOfStrings a = {0};
-	da_append(&arg.data.array, (char*)tokens->items[i++].data);
+	da_append(&arg.data.array_string, (char*)tokens->items[i++].data);
 
 	while (tokens->items[i].type == ARG_TOKEN_DATA && i < tokens->count) {
-		da_append(&arg.data.array, (char*)tokens->items[i].data);
+		da_append(&arg.data.array_string, (char*)tokens->items[i].data);
 		i++;
 	}
 	
@@ -223,7 +240,7 @@ bool argParse(int argc, char** argv, Arg* args, size_t args_size)
 		}
 
 		// Flag type check
-		if (args[i].type != arg_parsed->type) {
+		if (args[i].type != arg_parsed->type && args[i].type  == ARG_FLAG_BOOL) {
 			nob_log(ERROR, "Declared argument with flag %s and type %s does not match the parsed one with flag %s and %s",
 					args[i].flag,
 					argTypeToString(args[i].type),
@@ -233,14 +250,14 @@ bool argParse(int argc, char** argv, Arg* args, size_t args_size)
 		}
 
 		// Nargs check
-		if (args[i].type == ARG_FLAG_NARG && 
+		if (args[i].type != ARG_FLAG_BOOL && 
 				args[i].nargs > 0 &&
-				args[i].nargs != arg_parsed->data.array.count) {
+				args[i].nargs != arg_parsed->data.array_string.count) {
 			nob_log(ERROR, "Declared argument with flag %s and nargs %d does not match  the parsed one with flag %s and nargs %d",
 					args[i].flag,
 					args[i].nargs,
 					arg_parsed->flag,
-					arg_parsed->data.array.count
+					arg_parsed->data.array_string.count
 				);
 			abort();
 		}
@@ -248,8 +265,18 @@ bool argParse(int argc, char** argv, Arg* args, size_t args_size)
 		// Assign parsed data to output flag
 		//
 
-		if (args[i].type == ARG_FLAG_NARG) {
-			args[i].data.array = arg_parsed->data.array;
+		if (args[i].type == ARG_FLAG_NARG_STRING) {
+			args[i].data.array_string = arg_parsed->data.array_string;
+		} else if (args[i].type == ARG_FLAG_NARG_LONG) {
+			args[i].data.array_long.count = 0;
+			da_foreach(char*, str, &arg_parsed->data.array_string) {
+				da_append(&args[i].data.array_long, atol(*str));
+	  		}   
+		} else if (args[i].type == ARG_FLAG_NARG_DOUBLE) {
+			args[i].data.array_double.count = 0;
+			da_foreach(char*, str, &arg_parsed->data.array_string) {
+				da_append(&args[i].data.array_double, atof(*str));
+	  		}
 		} else if (args[i].type == ARG_FLAG_BOOL) {
 			args[i].data.exists = arg_parsed->data.exists;
 		}
@@ -276,12 +303,12 @@ int main(int argc, char** argv)
 		[0].flag     = "--test",
 		[0].required = true,
 
-		[1].type     = ARG_FLAG_NARG,
+		[1].type     = ARG_FLAG_NARG_LONG,
 		[1].flag     = "--output",
 		[1].nargs    = 2,
 		[1].required = true,
 		 
-		[2].type     = ARG_FLAG_NARG,
+		[2].type     = ARG_FLAG_NARG_DOUBLE,
 		[2].flag     = "--inputs",
 		[2].required = true,
 		[2].nargs    = 0
@@ -291,9 +318,17 @@ int main(int argc, char** argv)
 
 	Arg* a = &args[2];
 
-	if (a->type == ARG_FLAG_NARG) {
-		da_foreach(char*, str, &a->data.array) {
+	if (a->type == ARG_FLAG_NARG_STRING) {
+		da_foreach(char*, str, &a->data.array_string) {
 			nob_log(INFO, "Data: %d", atoll(*str));
+		}
+	} else if (a->type == ARG_FLAG_NARG_LONG) {
+		da_foreach(long, l, &a->data.array_long) {
+			nob_log(INFO, "Data: %ld", *l);
+		}
+	} else if (a->type == ARG_FLAG_NARG_DOUBLE) {
+		da_foreach(double, d, &a->data.array_double) {
+			nob_log(INFO, "Data: %f", *d);
 		}
 	} else if (a->type == ARG_FLAG_BOOL) {
 			nob_log(INFO, "bool flag: %d", a->data.exists);
