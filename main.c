@@ -34,7 +34,6 @@ typedef union {
 	ArrayOfDoubles array_double; // used for ARG_FLAG_NARG_DOUBLE
 } ArgData;
 
-
 typedef enum {
 	ARG_FLAG_BOOL,
 	ARG_FLAG_NARG_STRING,
@@ -67,7 +66,7 @@ const char * argTypeToString(ArgType a)
 	if (a == ARG_FLAG_NARG_LONG)   return "ARG_FLAG_NARG_LONG";
 	if (a == ARG_FLAG_NARG_DOUBLE) return "ARG_FLAG_NARG_DOUBLE";
 	nob_log(ERROR, "Unknown argument type %s", a);
-	abort();
+	exit(1);
 }
 
 
@@ -95,7 +94,7 @@ const char * argTokenTypeToString(ArgType a)
 	if (a == ARG_TOKEN_FLAG) return "ARG_TOKEN_FLAG";
 	if (a == ARG_TOKEN_DATA) return "ARG_TOKEN_DATA";
 	nob_log(ERROR, "Unknown argument type %s", a);
-	abort();
+	exit(1);
 }
 
 bool tokenizeArguments(int argc, char** argv, ArgTokens* tokens)
@@ -121,13 +120,13 @@ bool parseFlagNargs(const ArgTokens* tokens, size_t* current_count, Args* args_p
 	if(i >= tokens->count)
 	{
 		nob_log(ERROR, "Current count %d is bigger that the tokens->count %d: ", i, tokens->count);
-		abort();
+		exit(1);
 	}
 
 	if (tokens->items[i].type != ARG_TOKEN_FLAG) {
 		nob_log(ERROR, "Token %s type is not ARG_TOKEN_FLAG it is of type: %s", tokens->items[i].data,
 			argTokenTypeToString(tokens->items[i].type));
-		abort();
+		exit(1);
 	}
 
 	if(i+1 >= tokens->count)
@@ -162,12 +161,12 @@ bool parseFlagBool(const ArgTokens* tokens, size_t* current_count, Args* args_pa
 	if(i >= tokens->count)
 	{
 		nob_log(ERROR, "Current count %d is bigger that the tokens->count %d: ", i, tokens->count);
-		abort();
+		exit(1);
 	}
 
 	if (tokens->items[i].type != ARG_TOKEN_FLAG) {
 		nob_log(ERROR, "Token %s type is not ARG_TOKEN_FLAG it is of type: ", tokens->items[i].data, tokens->items[i].type);
-		abort();
+		exit(1);
 	}
 
 	// ARG_TOKEN_FLAG
@@ -199,7 +198,7 @@ bool checkParsedArguments(const Args* args_parsed, Arg* args, size_t args_size)
 		da_foreach(Arg, b, args_parsed) {
 			if (a != b && !strcmp(b->flag,a->flag)) {
 				nob_log(ERROR, "Duplicate flags %s provided", a->flag);
-				abort();
+				exit(1);
 			}
 		}
 
@@ -216,7 +215,17 @@ bool checkParsedArguments(const Args* args_parsed, Arg* args, size_t args_size)
 					a->flag,
 					argTypeToString(a->type)
 					);
-			abort();
+			exit(1);
+		}
+	}
+
+	for (size_t i = 0; i < args_size; i++) {
+		for (size_t j = 0; j < args_size; j++) {
+			if (i == j) continue;
+			if (!strcmp(args[i].flag, args[j].flag)) {
+				nob_log(ERROR, "Duplicate flags %s declared. Please declare each flags only 1 time.", args[i].flag); 
+				exit(1);
+			}
 		}
 	}
 }
@@ -266,19 +275,20 @@ bool argParse(int argc, char** argv, Arg* args, size_t args_size)
 		// Required check
 		if (!found && args[i].required) {
 			nob_log(ERROR, "Input argument %s is required and it is not provided", args[i].flag);
-			abort();
+			exit(1);
 		} else if (!found && !args[i].required) {
 			continue;
 		}
 
 		// Flag type check
-		if (args[i].type != arg_parsed->type && args[i].type  == ARG_FLAG_BOOL) {
+		if ((args[i].type == ARG_FLAG_BOOL && arg_parsed->type != ARG_FLAG_BOOL) ||
+		    (args[i].type != ARG_FLAG_BOOL && arg_parsed->type == ARG_FLAG_BOOL)) {
 			nob_log(ERROR, "Declared argument with flag %s and type %s does not match the parsed one with flag %s and %s",
 					args[i].flag,
 					argTypeToString(args[i].type),
 					arg_parsed->flag,
 					argTypeToString(arg_parsed->type));
-			abort();
+			exit(1);
 		}
 
 		// Nargs check
@@ -291,7 +301,7 @@ bool argParse(int argc, char** argv, Arg* args, size_t args_size)
 					arg_parsed->flag,
 					arg_parsed->data.array_string.count
 				);
-			abort();
+			exit(1);
 		}
 
 		// Assign based on type
@@ -305,9 +315,10 @@ bool argParse(int argc, char** argv, Arg* args, size_t args_size)
 					if ((!isdigit(tmp[j]) && !(j == 0 && tmp[j] == '-'))) {
 						nob_log(ERROR, "Declared argument with flag %s and type ARG_FLAG_NARG_LONG does not match the parsed one with flag %s and argument %s",
 								args[i].flag,
+								arg_parsed->flag,
 				tmp
 							);
-						abort();
+						exit(1);
 					}
 				}
 
@@ -326,7 +337,7 @@ bool argParse(int argc, char** argv, Arg* args, size_t args_size)
 								arg_parsed->flag,
 								tmp
 							);
-						abort();
+						exit(1);
 					}
 					if (tmp[j] == '.') dotfound = true;
 				}
@@ -359,31 +370,29 @@ int main(int argc, char** argv)
 		[2].required = true,
 		[2].help     = "This a help message for 2",
 
-		// TODO: check for duplicate declared args?
-		[3].type     = ARG_FLAG_NARG_STRING,
+		[3].type     = ARG_FLAG_NARG_LONG,
 		[3].flag     = "--harris",
 		[3].required = true,
-		[3].help     = "This a help message for 1",
 	};
 
 	argParse(argc, argv, args, sizeof(args)/sizeof(args[0]));
 
-	Arg* a = &args[3];
+	Arg a = args[3];
 
-	if (a->type == ARG_FLAG_NARG_STRING) {
-		da_foreach(char*, str, &a->data.array_string) {
+	if (a.type == ARG_FLAG_NARG_STRING) {
+		da_foreach(char*, str, &a.data.array_string) {
 			nob_log(INFO, "Data: %s", *str);
 		}
-	} else if (a->type == ARG_FLAG_NARG_LONG) {
-		da_foreach(long, l, &a->data.array_long) {
+	} else if (a.type == ARG_FLAG_NARG_LONG) {
+		da_foreach(long, l, &a.data.array_long) {
 			nob_log(INFO, "Data: %ld", *l);
 		}
-	} else if (a->type == ARG_FLAG_NARG_DOUBLE) {
-		da_foreach(double, d, &a->data.array_double) {
+	} else if (a.type == ARG_FLAG_NARG_DOUBLE) {
+		da_foreach(double, d, &a.data.array_double) {
 			nob_log(INFO, "Data: %f", *d);
 		}
-	} else if (a->type == ARG_FLAG_BOOL) {
-			nob_log(INFO, "bool flag: %d", a->data.exists);
+	} else if (a.type == ARG_FLAG_BOOL) {
+			nob_log(INFO, "bool flag: %d", a.data.exists);
 	}
 
 }
