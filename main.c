@@ -48,6 +48,7 @@ typedef struct {
 	const char* flag;
 	ArgData     data;
 	bool        required;
+	const char* help;
 	size_t      nargs;
 } Arg;
 
@@ -191,15 +192,31 @@ bool parseArguments(const ArgTokens* tokens, Args* args_parsed)
 }
 
 
-bool checkParsedArguments(const Args* args_parsed)
+bool checkParsedArguments(const Args* args_parsed, Arg* args, size_t args_size)
 {
-	// Duplicate flags check
 	da_foreach(Arg, a, args_parsed) {
+		// Duplicate flags check
 		da_foreach(Arg, b, args_parsed) {
 			if (a != b && !strcmp(b->flag,a->flag)) {
 				nob_log(ERROR, "Duplicate flags %s provided", a->flag);
 				abort();
 			}
+		}
+
+		// Extra undeclared flags check
+		bool found = false;
+		for (size_t i = 0; i < args_size; i++) {
+			if (!strcmp(a->flag,args[i].flag)) {
+				found = true;
+				break;
+			}
+		}
+		if (!found) {
+			nob_log(ERROR, "Undeclared argument flag %s provided of type %s please declared it as an input argument", 
+					a->flag,
+					argTypeToString(a->type)
+					);
+			abort();
 		}
 	}
 }
@@ -210,14 +227,29 @@ bool argParse(int argc, char** argv, Arg* args, size_t args_size)
 	ArgTokens tokens = {0};
 	tokenizeArguments(argc, argv, &tokens);
 
-	//da_foreach(ArgToken, t, &tokens) {
-	//     	size_t index = t - tokens.items;
-	//	nob_log(INFO, "%d, %s", t->type, t->data);
-	//}
-
 	Args args_parsed = {0};
 	parseArguments(&tokens, &args_parsed);
-	checkParsedArguments(&args_parsed);
+
+	if (!strcmp(args_parsed.items[0].flag, "--help")) {
+		printf("Help: Declared arguments:\n");
+
+		for (size_t i = 0; i < args_size; i++) {
+			printf("    %s of type %s",
+					args[i].flag,
+					argTypeToString(args[i].type)
+					);
+			if (args[i].help == NULL) {
+				printf("\n");
+			} else {
+				printf(": %s\n", args[i].help);
+			}
+
+
+		}
+		return 0;
+	}
+
+	checkParsedArguments(&args_parsed, args, args_size);
 
 	for (size_t i = 0; i < args_size; i++) {
 		// Find parsed arg
@@ -262,36 +294,48 @@ bool argParse(int argc, char** argv, Arg* args, size_t args_size)
 			abort();
 		}
 
-		// Assign parsed data to output flag
-		//
-
+		// Assign based on type
 		if (args[i].type == ARG_FLAG_NARG_STRING) {
 			args[i].data.array_string = arg_parsed->data.array_string;
 		} else if (args[i].type == ARG_FLAG_NARG_LONG) {
 			args[i].data.array_long.count = 0;
 			da_foreach(char*, str, &arg_parsed->data.array_string) {
-				da_append(&args[i].data.array_long, atol(*str));
+				const char* tmp = *str;
+				for(size_t j = 0; j <strlen(tmp); j++) {
+					if ((!isdigit(tmp[j]) && !(j == 0 && tmp[j] == '-'))) {
+						nob_log(ERROR, "Declared argument with flag %s and type ARG_FLAG_NARG_LONG does not match the parsed one with flag %s and argument %s",
+								args[i].flag,
+				tmp
+							);
+						abort();
+					}
+				}
+
+				da_append(&args[i].data.array_long, atol(tmp));
 	  		}   
 		} else if (args[i].type == ARG_FLAG_NARG_DOUBLE) {
 			args[i].data.array_double.count = 0;
 			da_foreach(char*, str, &arg_parsed->data.array_string) {
-				da_append(&args[i].data.array_double, atof(*str));
+				const char* tmp = *str;
+				bool dotfound = false;
+				for(size_t j = 0; j <strlen(tmp); j++) {
+					if ((!isdigit(tmp[j]) && !((j == 0 && tmp[j] == '-') || (!dotfound && tmp[j] == '.')))) {
+						printf("%c\n", tmp[j]);
+						nob_log(ERROR, "Declared argument with flag %s and type ARG_FLAG_NARG_DOUBLE does not match the parsed one with flag %s and argument %s",
+								args[i].flag,
+								arg_parsed->flag,
+								tmp
+							);
+						abort();
+					}
+					if (tmp[j] == '.') dotfound = true;
+				}
+				da_append(&args[i].data.array_double, atof(tmp));
 	  		}
 		} else if (args[i].type == ARG_FLAG_BOOL) {
 			args[i].data.exists = arg_parsed->data.exists;
 		}
 	}
-
-	//da_foreach(Arg, a, &args_parsed) {
-	//	nob_log(INFO, "flag: %s", a->flag);
-	//	if (a->type == ARG_FLAG_NARG) {
-	//		da_foreach(char*, str, &a->data.array) {
-	//			nob_log(INFO, "Data: %s", *str);
-	//		}
-	//	} else if (a->type == ARG_FLAG_BOOL) {
-	//			nob_log(INFO, "bool flag: %d", a->data.exists);
-	//	}
-	//}
 }
 
 
@@ -302,25 +346,33 @@ int main(int argc, char** argv)
 		[0].type     = ARG_FLAG_BOOL,
 		[0].flag     = "--test",
 		[0].required = true,
+		[0].help     = "This a help message for 0",
 
 		[1].type     = ARG_FLAG_NARG_LONG,
 		[1].flag     = "--output",
 		[1].nargs    = 2,
 		[1].required = true,
+		[1].help     = "This a help message for 1",
 		 
 		[2].type     = ARG_FLAG_NARG_DOUBLE,
 		[2].flag     = "--inputs",
 		[2].required = true,
-		[2].nargs    = 0
+		[2].help     = "This a help message for 2",
+
+		// TODO: check for duplicate declared args?
+		[3].type     = ARG_FLAG_NARG_STRING,
+		[3].flag     = "--harris",
+		[3].required = true,
+		[3].help     = "This a help message for 1",
 	};
 
 	argParse(argc, argv, args, sizeof(args)/sizeof(args[0]));
 
-	Arg* a = &args[2];
+	Arg* a = &args[3];
 
 	if (a->type == ARG_FLAG_NARG_STRING) {
 		da_foreach(char*, str, &a->data.array_string) {
-			nob_log(INFO, "Data: %d", atoll(*str));
+			nob_log(INFO, "Data: %s", *str);
 		}
 	} else if (a->type == ARG_FLAG_NARG_LONG) {
 		da_foreach(long, l, &a->data.array_long) {
