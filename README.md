@@ -1,7 +1,7 @@
 # Argparse: Minimal argument parser in C
 
 This library implements a minimal/simple argument parsing for C
-programs. It is inspired by Pythons [argparse](https://docs.python.org/3/library/argparse.html) library.
+programs. It is inspired by Python's [argparse](https://docs.python.org/3/library/argparse.html) library.
 
 ## Usage
 
