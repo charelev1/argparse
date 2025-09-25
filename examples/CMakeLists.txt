@@ -12,3 +12,7 @@ target_link_libraries(01_person PRIVATE argparse)
 target_include_directories(01_person PRIVATE 
 		${CMAKE_CURRENT_SOURCE_DIR}/../lib/include)
 
+add_executable(02_dummy_tool 02_dummy_tool/main.c)
+target_link_libraries(02_dummy_tool PRIVATE argparse)
+target_include_directories(02_dummy_tool PRIVATE 
+		${CMAKE_CURRENT_SOURCE_DIR}/../lib/include)

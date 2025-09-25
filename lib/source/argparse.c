@@ -232,13 +232,18 @@ bool argParse(int argc, char** argv, Arg* args, size_t args_size)
 			}
 		}
 
-		// Required check
-		if (!found && args[i].required) {
+		// Required check 
+		// (Ignore the required in a bool flag)
+		if (!found && args[i].required && args[i].type == ARG_BOOL ) {
+			continue;
+		}
+		if (!found && args[i].required ) {
 			nob_log(ERROR, "Input argument %s is required and it is not provided", args[i].flag);
 			exit(1);
 		} else if (!found && !args[i].required) {
 			continue;
 		}
+
 
 		// Flag type check
 		if ((args[i].type == ARG_BOOL && arg_parsed->type != ARG_BOOL) ||
